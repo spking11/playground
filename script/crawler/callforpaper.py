@@ -7,12 +7,13 @@ from collections import defaultdict
 from functools import reduce
 import os
 import requests_cache
+import datetime
 
 requests_cache.install_cache(cache_name="cache", backend="sqlite")
 
 
 class Conference:
-    def __init__(self, name: str, name_link: str, date: str) -> None:
+    def __init__(self, name: str, name_link: str, date: datetime.date) -> None:
         self.name = name
         self.name_link = name_link
         self.date = date
@@ -41,7 +42,10 @@ class CCFList:
             Conference(
                 name_tag.text.strip(),
                 self.resolveLink(name_tag.attrs["href"]),
-                tag.select_one(".table-tr-date").contents[0].text.strip(),
+                datetime.datetime.strptime(
+                    tag.select_one(".table-tr-date").contents[0].text.strip(),
+                    "%Y-%m-%d",
+                ),
             )
         )
 
@@ -52,7 +56,10 @@ class CCFList:
             Journal(
                 name_tag.text.strip(),
                 self.resolveLink(name_tag.attrs["href"]),
-                tag.select_one(".table-tr-date").contents[0].text.strip(),
+                datetime.datetime.strptime(
+                    tag.select_one(".table-tr-date").contents[0].text.strip(),
+                    "%Y-%m-%d",
+                ),
             )
         )
 
@@ -99,26 +106,21 @@ def writeMerge(
 ):
     if size == 0:
         return
-    if size == 1:
-        if link:
-            worksheet.write_url(row, col, link, string=data)
-        else:
-            worksheet.write(row, col, data)
+    if size > 1:
+        worksheet.merge_range(row, col, row + size - 1, col, "")
+    if link:
+        for i in range(row, row + size):
+            worksheet.write_url(i, col, link, string=data)
     else:
-        worksheet.merge_range(
-            row,
-            col,
-            row + size - 1,
-            col,
-            data,
-        )
-        if link:
-            worksheet.write_url(row, col, link, string=data)
+        for i in range(row, row + size):
+            worksheet.write(i, col, data)
 
 
 def writeData():
     with xlsxwriter.Workbook(os.path.splitext(__file__)[0] + ".xlsx") as workbook:
         worksheet = workbook.add_worksheet()
+        date_format = workbook.add_format({"num_format": "yyyy-mm-dd"})
+
         worksheet.write_row("A1", ("专业领域", "种类", "rank", "名称", "截稿日期"))
         row_num = 1
         for ccflist in ccflists:
@@ -135,14 +137,14 @@ def writeData():
                 row_num,
                 1,
                 ccflist.getConferenceCount(),
-                "中国计算机学会推荐国际学术会议",
+                "会议",
             )
             writeMerge(
                 worksheet,
                 row_num + ccflist.getConferenceCount(),
                 1,
                 ccflist.getJournalCount(),
-                "中国计算机学会推荐国际学术刊物",
+                "刊物",
             )
             for rank, conferences in ccflist.conferences.items():
                 writeMerge(worksheet, row_num, 2, len(conferences), rank)
@@ -150,7 +152,7 @@ def writeData():
                     worksheet.write_url(
                         row_num, 3, conference.name_link, string=conference.name
                     )
-                    worksheet.write(row_num, 4, conference.date)
+                    worksheet.write_datetime(row_num, 4, conference.date, date_format)
                     row_num += 1
 
             for rank, journals in ccflist.journals.items():
@@ -159,7 +161,7 @@ def writeData():
                     worksheet.write_url(
                         row_num, 3, journal.name_link, string=journal.name
                     )
-                    worksheet.write(row_num, 4, journal.date)
+                    worksheet.write_datetime(row_num, 4, journal.date, date_format)
                     row_num += 1
 
 
